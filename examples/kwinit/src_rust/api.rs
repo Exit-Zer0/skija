@@ -49,115 +49,132 @@ struct KWindow {
 struct WindowAttributes {
   inner_size: LogicalSize<f32>,
   position: LogicalPosition<f32>,
-  title: String
+  title: String,
+  macos_traffic_light_area: Option<LogicalSize<f64>>
 }
 
 impl KWindow {
-
     fn new(event_loop_window_target: &EventLoopWindowTarget<i64>,
            attributes: WindowAttributes,
-           window_id: KWindowId) -> Self {
+           window_id: KWindowId) -> Self
+    {
 
-     let window_builder = WindowBuilder::new()
-         .with_title(attributes.title)
-         .with_resizable(true)
-         .with_inner_size(attributes.inner_size)
-         .with_visible(false);
+        let window_builder = WindowBuilder::new()
+            .with_title(attributes.title)
+            .with_resizable(true)
+            .with_inner_size(attributes.inner_size)
+            .with_visible(false);
 
-     let context_builder = glutin::ContextBuilder::new()
-         .with_vsync(true)
-         .with_gl(glutin::GlRequest::GlThenGles {
-             opengl_version: (3, 2),
-             opengles_version: (3, 0),
-         });
+        let context_builder = glutin::ContextBuilder::new()
+            .with_vsync(true)
+            .with_gl(glutin::GlRequest::GlThenGles {
+                opengl_version: (3, 2),
+                opengles_version: (3, 0),
+            });
 
-    //  let opts = if cfg!(macos) {
-    //      if transparent_titlebar {
-    //          PhotonWindowOptions {
-    //              macos_transparent_titlebar: true,
-    //              macos_buttons_x: None,
-    //              macos_buttons_y: None,
-    //          }
-    //      } else {
-    //          PhotonWindowOptions::default()
-    //      }
-    //  } else {
-    //      PhotonWindowOptions::default()
-    //  };
+        let context = create_windowed_context_wrapper(window_builder, context_builder, event_loop_window_target);
+        let window = context.window();
+        #[cfg(target_os = "windows")] unsafe { remove_system_title_bar(window); }
+        window.set_visible(true);
+        window.set_outer_position(attributes.position);
 
+        #[cfg(target_os = "macos")] {
+            unsafe {
+                use cocoa::appkit::*;
+                use cocoa::base::nil;
+                use cocoa::foundation::{NSPoint, NSRect, NSSize, NSString, NSUInteger};
+                use cocoa::appkit::NSWindowButton::*;
+                use objc::*;
 
-     let context = create_windowed_context_wrapper(window_builder, context_builder, event_loop_window_target);
-     let window = context.window();
-     #[cfg(target_os = "windows")] unsafe { remove_system_title_bar(window); }
-     window.set_visible(true);
-     window.set_outer_position(attributes.position);
+                let nswindow = window.ns_window() as *mut objc::runtime::Object;
+                NSWindow::setTitleVisibility_(nswindow, NSWindowTitleVisibility::NSWindowTitleHidden);
+                NSWindow::setTitlebarAppearsTransparent_(nswindow, YES);
+             
+                // always show `fullscreen` green traffic light button instead of `maximize/zoom` button
+                // let behavior_mask = NSWindow::collectionBehavior(nswindow);
+                // NSWindow::setCollectionBehavior_(nswindow, behavior_mask | NSWindowCollectionBehavior::NSWindowCollectionBehaviorFullScreenPrimary);
+                let mask = NSWindow::styleMask(nswindow);
+                NSWindow::setStyleMask_(nswindow, mask | NSWindowStyleMask::NSFullSizeContentViewWindowMask);
 
-     #[cfg(target_os = "macos")]
-     {
-         unsafe {
-             use cocoa::appkit::*;
+                // let content_view = nswindow.contentView();
+                // content_view.setWantsLayer(YES);
 
-             let nswindow = window.ns_window() as *mut objc::runtime::Object;
-             NSWindow::setTitleVisibility_(nswindow, NSWindowTitleVisibility::NSWindowTitleHidden);
-             NSWindow::setTitlebarAppearsTransparent_(nswindow, YES);
-             let mask = NSWindow::styleMask(nswindow);
-             NSWindow::setStyleMask_(nswindow, mask | NSWindowStyleMask::NSFullSizeContentViewWindowMask);
-             // always show `fullscreen` green traffic light button instead of `maximize/zoom` button
-             let behavior_mask = NSWindow::collectionBehavior(nswindow);
-             NSWindow::setCollectionBehavior_(nswindow, behavior_mask | NSWindowCollectionBehavior::NSWindowCollectionBehaviorFullScreenPrimary);
+                // NSWindow::setMovable_(nswindow, NO);
 
-             NSWindow::setMovable_(nswindow, NO);
+                if let Some(area) = attributes.macos_traffic_light_area {
+                    // https://github.com/electron/electron/pull/21781/files
+                    let close = NSWindow::standardWindowButton_(nswindow, NSWindowCloseButton);
+                    let miniaturize = NSWindow::standardWindowButton_(nswindow, NSWindowMiniaturizeButton);
+                    let zoom = NSWindow::standardWindowButton_(nswindow, NSWindowZoomButton);
 
-            //  if opts.macos_buttons_x.is_some() && opts.macos_buttons_y.is_some() {
-            //      let tl_offset_x = opts.macos_buttons_x.unwrap();
-            //      let tl_offset_y = opts.macos_buttons_y.unwrap();
+                    // let titlebar_container_view = NSView::superview(NSView::superview(close));
 
-            //      // https://github.com/electron/electron/pull/21781/files
-            //      let close = NSWindow::standardWindowButton_(nswindow, NSWindowCloseButton);
-            //      let miniaturize = NSWindow::standardWindowButton_(nswindow, NSWindowMiniaturizeButton);
-            //      let zoom = NSWindow::standardWindowButton_(nswindow, NSWindowZoomButton);
+                    // todo hide buttons when exiting fullscreen so they don't jump
+                    // let _: () = msg_send![titlebar_container_view, setHidden:NO];
+                    // let btn_height = NSView::frame(close).size.height;
+                    // let titlebar_frame_height = btn_height + tl_offset_y;
+                    // let titlebar_frame = NSView::frame(titlebar_container_view);
 
-            //      let titlebar_container_view = NSView::superview(NSView::superview(close));
+                    // NSView::removeFromSuperview(NSView::superview(close));
+                    
+                    // let frame = NSRect {
+                    //     origin: NSPoint {
+                    //         x: titlebar_frame.origin.x,
+                    //         y: 200.0, // NSView::frame(nswindow).size.height - area.height,
+                    //     },
+                    //     size: NSSize {
+                    //         width: titlebar_frame.size.width,
+                    //         height: area.height,
+                    //     },
+                    // };
+                    // let _: () = msg_send![titlebar_container_view, setAutoresizingMask:(NSViewMaxXMargin | NSViewMinYMargin)];
+                    // let _: () = msg_send![titlebar_container_view, setFrame:frame];
+                    // let _: () = msg_send![titlebar_container_view, viewDidMoveToWindow];
 
-            //      // todo hide buttons when exiting fullscreen so they don't jump
-            //      let _: () = msg_send![titlebar_container_view, setHidden:false];
-            //      let btn_height = NSView::frame(close).size.height;
-            //      let titlebar_frame_height = btn_height + tl_offset_y;
-            //      let titlebar_frame = NSView::frame(titlebar_container_view);
+                    let old_origin_x = NSView::frame(close).origin.x;
+                    let old_origin_y = NSView::frame(close).origin.y;
+                    
+                    let buttons_area_width = NSView::frame(zoom).origin.x - NSView::frame(close).origin.x + NSView::frame(zoom).size.width * 2.0;
+                    let buttons_area_height = NSView::frame(close).size.height * 2.0;
+                    let space_between = NSView::frame(miniaturize).origin.x - NSView::frame(close).origin.x;
+                    println!("Close: {} {} {} {}", NSView::frame(close).origin.x, NSView::frame(close).origin.y, NSView::frame(close).size.width, NSView::frame(close).size.height);
+                    println!("Zoom: {} {} {} {}", NSView::frame(zoom).origin.x, NSView::frame(zoom).origin.y, NSView::frame(zoom).size.width, NSView::frame(zoom).size.height);
+                    println!("{} {} {} {} {} {}", old_origin_x, old_origin_y, buttons_area_width, buttons_area_height, space_between, NSView::frame(nswindow).size.height);
 
-            //      let frame = NSRect {
-            //          origin: NSPoint {
-            //              x: titlebar_frame.origin.x,
-            //              y: NSView::frame(nswindow).size.height - titlebar_frame_height,
-            //          },
-            //          size: NSSize {
-            //              width: titlebar_frame.size.width,
-            //              height: titlebar_frame_height,
-            //          },
-            //      };
-            //      let _: () = msg_send![titlebar_container_view, setFrame:frame];
+                    let view = NSView::initWithFrame_(NSView::alloc(nil),
+                        NSRect {
+                            origin: NSPoint {
+                                x: (area.width - buttons_area_width) / 2.0,
+                                y: NSView::frame(nswindow).size.height - buttons_area_height - (area.height - buttons_area_height) / 2.0,
+                            },
+                            size: NSSize {
+                                width: buttons_area_width,
+                                height: buttons_area_height
+                            }
+                        });
+                    let _: () = msg_send![view, setAutoresizingMask:(NSViewMaxXMargin | NSViewMinYMargin)];
+                    let btns = vec![close, miniaturize, zoom];
+                    for i in 0..btns.len() {
+                        let btn = btns[i];
+                        // let btn_frame = NSView::frame(btn);
+                        // let origin = NSPoint {
+                        //     x: (i as f64 * space_between) * 5.0,
+                        //     y: -10.0,
+                        // };
+                        // let _: () = msg_send![btn, setFrameOrigin:origin];
+                        let _: () = msg_send![btn, setAutoresizingMask:(NSViewMaxXMargin | NSViewMinYMargin)];
+                        NSView::addSubview_(view, btn);
+                    }
+                    NSView::addSubview_(NSWindow::contentView(nswindow), view);
+                }
+            }
+        }
 
-            //      let btns = vec![close, miniaturize, zoom];
-            //      let space_between = NSView::frame(miniaturize).origin.x - NSView::frame(close).origin.x;
-            //      for i in 0..btns.len() {
-            //          let btn = btns[i];
-            //          let btn_frame = NSView::frame(btn);
-
-            //          let origin = NSPoint {
-            //              x: tl_offset_x + (i as f64 * space_between),
-            //              y: btn_frame.origin.y,
-            //          };
-            //          let _: () = msg_send![btn, setFrameOrigin:origin];
-            //      }
-            //  }
-         }
-     }
-
-     KWindow { 
-        context, 
-        _id: window_id
+        KWindow { 
+            context, 
+            _id: window_id
+        }
     }
- }
 }
 
 #[derive(Default)]

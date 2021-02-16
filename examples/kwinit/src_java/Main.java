@@ -212,6 +212,11 @@ public class Main {
 
     public void onDraw() {
         Scenes.draw(canvas, width, height, scale, (int) mouseX, (int) mouseY);
+        try (var paint = new Paint().setMode(PaintMode.STROKE).setStrokeWidth(1)) {
+            canvas.drawRect(Rect.makeXYWH(0, 0, 300 * scale, 100 * scale), paint);
+            canvas.drawLine(150 * scale, 0, 150 * scale, 100 * scale, paint);
+            canvas.drawLine(0, 50 * scale, 300 * scale, 50 * scale, paint);
+        }
         context.flush();
         ExternalAPI.fireUserEvent(1);
     }
@@ -219,9 +224,11 @@ public class Main {
     public void handleUserEvent(int cookie) {
         switch (cookie) {
             case 0:
-                window = ExternalAPI.createWindow("{\"inner_size\":{\"width\": " + width + ".0, \"height\": " + height + ".0},"
-                                                  + "\"position\":{\"x\":100.0,\"y\":100.0},"
-                                                  + "\"title\":\"Skija KWinit Example\"}");
+                var windowAttrs = ("{'inner_size':{'width': " + width + ".0, 'height': " + height + ".0},"
+                                   + "'position':{'x':100.0,'y':100.0},"
+                                   + "'title':'Skija KWinit Example',"
+                                   + "'macos_traffic_light_area':{'width': 300.0, 'height': 100.0}}").replaceAll("'", "\"");
+                window = ExternalAPI.createWindow(windowAttrs);
                 Stats.enabled = true;
                 context = DirectContext.makeGL();
                 scale = (float) ExternalAPI.getScaleFactor(window);
